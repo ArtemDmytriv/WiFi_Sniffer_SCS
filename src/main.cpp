@@ -10,7 +10,13 @@
 #include "nvs_flash.h"
 #include "driver/gpio.h"
 
+extern "C" {
+#include "ssd1306.h"
+#include "font8x8_basic.h"
+}
+
 #define	LED_GPIO_PIN			GPIO_NUM_2
+
 #define	WIFI_CHANNEL_MAX		(13)
 #define	WIFI_CHANNEL_SWITCH_INTERVAL	(500)
 
@@ -28,6 +34,23 @@ enum class state {
 
 extern "C" void app_main(void);
 static esp_err_t event_handler(void *ctx, system_event_t *event);
+
+
+SSD1306_t dev;
+
+static void initialize_ssd1306(void) {
+
+	ESP_LOGI(TAG, "INTERFACE is i2c");
+	ESP_LOGI(TAG, "CONFIG_SDA_GPIO=%d",CONFIG_SDA_GPIO);
+	ESP_LOGI(TAG, "CONFIG_SCL_GPIO=%d",CONFIG_SCL_GPIO);
+	ESP_LOGI(TAG, "CONFIG_RESET_GPIO=%d",CONFIG_RESET_GPIO);
+	i2c_master_init(&dev, CONFIG_SDA_GPIO, CONFIG_SCL_GPIO, CONFIG_RESET_GPIO);
+
+	ESP_LOGI(TAG, "Panel is 128x64");
+	ssd1306_init(&dev, 128, 64);
+
+	ssd1306_clear_screen(&dev, false);
+}
 
 static void initialize_nvs(void)
 {
@@ -54,6 +77,11 @@ void app_main(void) {
 	/* setup */
 	initialize_nvs();
 	initialize_wifi();  
+	initialize_ssd1306();
+			
+	// Test OLED
+	ssd1306_contrast(&dev, 0xff);
+	ssd1306_display_text(&dev, 0, "WiFISniffer", 11, false);
 	
 	ESP_ERROR_CHECK(esp_netif_init());
 	ESP_ERROR_CHECK(esp_event_loop_create_default());
@@ -70,8 +98,9 @@ void app_main(void) {
 		vTaskDelay(WIFI_CHANNEL_SWITCH_INTERVAL / portTICK_PERIOD_MS);
 		
 		//wifi_sniffer_set_channel(channel);
-		wifi_netw_scan();
+		//wifi_netw_scan();
 		ESP_LOGI(TAG, "Iteration");
+
 		channel = (channel % WIFI_CHANNEL_MAX) + 1;
     }
 }
