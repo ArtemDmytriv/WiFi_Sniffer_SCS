@@ -26,9 +26,7 @@ enum class state {
 	POST_RESP
 };
 
-extern "C" {
-	void app_main(void);
-}
+extern "C" void app_main(void);
 static esp_err_t event_handler(void *ctx, system_event_t *event);
 
 static void initialize_nvs(void)
@@ -55,18 +53,24 @@ void app_main(void) {
 
 	/* setup */
 	initialize_nvs();
-	//initialize_wifi();  
-    
+	initialize_wifi();  
+	
+	ESP_ERROR_CHECK(esp_netif_init());
 	ESP_ERROR_CHECK(esp_event_loop_create_default());
+	esp_netif_t *sta_netif = esp_netif_create_default_wifi_sta();
+    assert(sta_netif);
+    
 	//wifi_sniffer_init();
 	gpio_set_direction(LED_GPIO_PIN, GPIO_MODE_OUTPUT);
 	
-	wifi_netw_scan();
+  	ESP_ERROR_CHECK(esp_wifi_start());// starts wifi usage
 	/* loop */
 	while (true) {
 		gpio_set_level(LED_GPIO_PIN, level ^= 1);
 		vTaskDelay(WIFI_CHANNEL_SWITCH_INTERVAL / portTICK_PERIOD_MS);
+		
 		//wifi_sniffer_set_channel(channel);
+		wifi_netw_scan();
 		ESP_LOGI(TAG, "Iteration");
 		channel = (channel % WIFI_CHANNEL_MAX) + 1;
     }

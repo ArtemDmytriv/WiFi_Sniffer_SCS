@@ -101,8 +101,6 @@ static void print_cipher_type(int pairwise_cipher, int group_cipher)
 
 
 void wifi_netw_scan_with_config(wifi_scan_config_t *scan_cfg) {
-    esp_netif_t *sta_netif = esp_netif_create_default_wifi_sta();
-    assert(sta_netif);
 
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
