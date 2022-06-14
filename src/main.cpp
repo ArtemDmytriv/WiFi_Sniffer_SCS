@@ -1,7 +1,12 @@
 #include "sniffer.h"
 #include "netw_scan.h"
+#include "task_handle.h"
+#include "state_handle.h"
+#include "oled_disp.h"
+#include "sim808.h"
 
 #include "freertos/FreeRTOS.h"
+#include "string.h"
 #include "esp_wifi.h"
 #include "esp_wifi_types.h"
 #include "esp_system.h"
@@ -9,48 +14,23 @@
 #include "esp_log.h"
 #include "nvs_flash.h"
 #include "driver/gpio.h"
+#include "driver/uart.h"
+
+#include "ArduinoJson.h"
 
 extern "C" {
 #include "ssd1306.h"
 #include "font8x8_basic.h"
 }
 
-#define	LED_GPIO_PIN			GPIO_NUM_2
-
+// WiFi defines
 #define	WIFI_CHANNEL_MAX		(13)
 #define	WIFI_CHANNEL_SWITCH_INTERVAL	(500)
 
 static const char *TAG = "main";
 
-enum class state {
-	SCAN_ALL_AP,
-	SCAN_CHANNEL_AP,
-	SCAN_AP_FOR_STA,
-	SNIFF_CHANNEL,
-	SNIFF_STA,
-	GET_TASK,
-	POST_RESP
-};
-
 extern "C" void app_main(void);
 static esp_err_t event_handler(void *ctx, system_event_t *event);
-
-
-SSD1306_t dev;
-
-static void initialize_ssd1306(void) {
-
-	ESP_LOGI(TAG, "INTERFACE is i2c");
-	ESP_LOGI(TAG, "CONFIG_SDA_GPIO=%d",CONFIG_SDA_GPIO);
-	ESP_LOGI(TAG, "CONFIG_SCL_GPIO=%d",CONFIG_SCL_GPIO);
-	ESP_LOGI(TAG, "CONFIG_RESET_GPIO=%d",CONFIG_RESET_GPIO);
-	i2c_master_init(&dev, CONFIG_SDA_GPIO, CONFIG_SCL_GPIO, CONFIG_RESET_GPIO);
-
-	ESP_LOGI(TAG, "Panel is 128x64");
-	ssd1306_init(&dev, 128, 64);
-
-	ssd1306_clear_screen(&dev, false);
-}
 
 static void initialize_nvs(void)
 {
@@ -72,16 +52,26 @@ static void initialize_wifi(void)
 }
 
 void app_main(void) {
+	SSD1306_t dev;
 	uint8_t level = 0, channel = 1;
+
+	StateMachine main_state_machine;
+	main_state_machine.setup(DevConfigure{}); 
+	ESP_LOGI(TAG, "State: %s", main_state_machine.get_device_state().get_cstr());
+
+	main_state_machine.task_queue.emplace(new Task{1, outputMode::JSON_RESPONSE, 10, task_type::SCAN_AP_ALL});
+	main_state_machine.task_queue.emplace(new Task{2, outputMode::JSON_RESPONSE, 20, task_type::SNIFF_CHANNEL});
+	main_state_machine.task_queue.emplace(new Task{3, outputMode::JSON_RESPONSE, 20, task_type::SNIFF_CHANNEL});
 
 	/* setup */
 	initialize_nvs();
 	initialize_wifi();  
-	initialize_ssd1306();
+	initialize_ssd1306(&dev);
+	// initialize_sim808Uart();
 			
 	// Test OLED
 	ssd1306_contrast(&dev, 0xff);
-	ssd1306_display_text(&dev, 0, "WiFISniffer", 11, false);
+	ssd1306_display_text(&dev, 0, "WiFISniffer\n", 11, false);
 	
 	ESP_ERROR_CHECK(esp_netif_init());
 	ESP_ERROR_CHECK(esp_event_loop_create_default());
@@ -89,19 +79,29 @@ void app_main(void) {
     assert(sta_netif);
     
 	//wifi_sniffer_init();
-	gpio_set_direction(LED_GPIO_PIN, GPIO_MODE_OUTPUT);
 	
   	ESP_ERROR_CHECK(esp_wifi_start());// starts wifi usage
+
+	char oled_buffer[64] = {};
+	uint8_t *data = (uint8_t *) malloc(BUF_SIZE);
 	/* loop */
 	while (true) {
-		gpio_set_level(LED_GPIO_PIN, level ^= 1);
-		vTaskDelay(WIFI_CHANNEL_SWITCH_INTERVAL / portTICK_PERIOD_MS);
-		
 		//wifi_sniffer_set_channel(channel);
 		//wifi_netw_scan();
-		ESP_LOGI(TAG, "Iteration");
+		ESP_LOGI(TAG, "State: %s", main_state_machine.get_device_state().get_cstr());
+		strncpy(oled_buffer, main_state_machine.get_device_state().get_cstr(), 64);
+		ssd1306_display_text(&dev, 0, oled_buffer, strlen(oled_buffer), false);
+		//channel = (channel % WIFI_CHANNEL_MAX) + 1;
 
-		channel = (channel % WIFI_CHANNEL_MAX) + 1;
+		// Read data from the UART
+        int len = uart_read_bytes(UART_SIM808_PORT_NUM, data, (BUF_SIZE - 1), 20 / portTICK_PERIOD_MS);
+        // Write data back to the UART
+        // uart_write_bytes(UART_SIM808_PORT_NUM, (const char *) data, len);
+        if (len) {
+            data[len] = '\0';
+            ESP_LOGI(TAG, "Recv str: %s", (char *) data);
+        }
+		vTaskDelay(2000 / portTICK_PERIOD_MS);
     }
 }
 
