@@ -1,8 +1,8 @@
 #include "state_handle.h"
 #include "sniffer.h"
-
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+
 #include "esp_log.h"
 
 // DevState class implementation
@@ -10,17 +10,13 @@ const char *DevState::TAG = "DevState";
 
 DevState::DevState(device_state_type state, Task *ptr) : _s(state), task_to_do(ptr) { 
     ESP_LOGI(DevState::TAG, "ctor");
-    if (this->task_to_do)
-        ESP_LOGI(DevState::TAG, "Duartion State %d", this->task_to_do->duration);
 }
 
 // ?
 DevState::DevState(const DevState &ds) : _s(ds._s), task_to_do(ds.task_to_do) { 
-    ESP_LOGI(DevState::TAG, "copy ctor");
 }
 
 DevState::DevState(DevState &&ds) : _s(ds._s), task_to_do(ds.task_to_do) { 
-    ESP_LOGI(DevState::TAG, "move ctor");
     ds.task_to_do = nullptr;
 }
 
@@ -46,15 +42,23 @@ void DevState::do_job() {
     ESP_LOGI(DevState::TAG, "Do some job, start Tick %d", start);
     task_to_do->do_task();
     for(;;) {
-        task_to_do->do_task();
+        if (_s != s_type::WIFI_SNIFFER)
+            task_to_do->do_task();
         vTaskDelay(50 / portTICK_PERIOD_MS);
         end = esp_log_timestamp();
         if ((end - start) > task_to_do->duration * 1000)
             break;
     }
-    vTaskResume(main_handle);
+    //vTaskResume(main_handle);
+    //vTaskSuspend(NULL);
 }
 
+void DevState::remove_task() {
+    if (task_to_do) {
+        delete task_to_do;
+    }
+    task_to_do = nullptr;
+}
 
 // StateMachine class implementation
 const char *StateMachine::TAG = "StateMachine";
@@ -142,52 +146,45 @@ static DevConfigure get_configure_for_state(const DevState &ds) {
     return val;
 }
 
-static void task_decorator(void *arg) {
-    DevState *s = (DevState *)arg;
-    for(;;) {
-        if (s)
-            s->do_job();
-    }
-} 
-
 void StateMachine::main_loop() {
     ESP_LOGI(TAG, "main_loop job");
     do_job = false;
     DevState sleep_state = DevState{s_type::SLEEP};
-    xTaskHandle xth;
-    xTaskCreate(task_decorator, "Worker", 5*1024, &_current_state, 1, &xth);
-    vTaskSuspend(xth);
+    //xTaskCreate(task_decorator, "Worker", 5*1024, &_current_state, 1, &xth);
+    //vTaskSuspend(xth);
     for (;;) {
-        ESP_LOGI(TAG, "loop iter");
+        ESP_LOGI(TAG, "Idle");
         if (!do_job && !task_queue.empty()) {
-            ESP_LOGI(TAG, "Get Task from queue");
-            Task *new_task = task_queue.front();
-            task_queue.pop();
-            ESP_LOGI(TAG, "Task Duration %d", new_task->duration);
-            _current_state = DevState{get_state_for_task(new_task->get_task_type()), new_task};
-            this->setup(get_configure_for_state(_current_state));
-            do_job = true;
+            if (xSemaphoreTake(task_sem, ( TickType_t ) 10) == pdTRUE) {
+                Task *new_task = task_queue.front();
+                ESP_LOGI(TAG, "Get Task from queue %d", new_task->id);
+                task_queue.pop();
+                ESP_LOGI(TAG, "Task Duration %d", new_task->duration);
+                _current_state = std::move(DevState{get_state_for_task(new_task->get_task_type()), new_task});
+                this->setup(get_configure_for_state(_current_state));
+                do_job = true;
+                xSemaphoreGive(task_sem);
+            }
         }
         else if (!do_job) {
             _current_state = sleep_state;
         }
 
         if (do_job) {
+            vTaskSuspend(task_getter_handle);
             ESP_LOGI(TAG,"Start task");
-            //_current_state.do_job();
-            vTaskResume(xth);
-            vTaskSuspend(NULL);
+            _current_state.do_job();
+
             ESP_LOGI(TAG,"End task");
-            if (_current_state.get_dev_state() == s_type::WIFI_SNIFFER) {
-                ESP_LOGI(TAG,"Disable sniffer");    
-                wifi_sniffer_stop();
-            }
-            delete _current_state.get_task();
-            vTaskSuspend(xth);
+            _current_state.get_task()->stop_task();
+            _current_state.remove_task();
+
+            vTaskResume(task_getter_handle);
             do_job = false;
         }
         else {
-            vTaskDelay(500 / portTICK_PERIOD_MS);
+            vTaskResume(task_getter_handle);
+            vTaskDelay(5000 / portTICK_PERIOD_MS);
         }
     }
 

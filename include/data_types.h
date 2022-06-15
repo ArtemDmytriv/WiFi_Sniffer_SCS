@@ -4,12 +4,6 @@
 #include "esp_wifi_types.h"
 
 
-typedef enum {
-    SNIFFER_INTF_UNKNOWN = 0,
-    SNIFFER_INTF_WLAN, /*!< WLAN interface */
-    SNIFFER_INTF_ETH, /*!< Ethernet interface */
-} sniffer_intf_t;
-
 
 // WLAN Sniffer Filter
 typedef enum {

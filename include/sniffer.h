@@ -5,10 +5,6 @@
 #include <vector>
 #include <string>
 
-void wifi_sniffer_init();
-void wifi_sniffer_start();
-void wifi_sniffer_stop();
-
 typedef struct {
     std::vector<std::string> filters;
     int channel;

@@ -3,6 +3,7 @@
 
 #include "stdio.h"
 #include "esp_err.h"
+#include "string"
 
 #define FILE_NAME_MAX_LEN 64 
 #define SNIFFER_MOUNT_POINT "/sdcard"
@@ -67,7 +68,7 @@ typedef struct {
 } pcap_cmd_runtime_t;
 
 typedef struct {
-    const char *file;
+    std::string file;
     int open;
     int close;
     int summary;
@@ -86,7 +87,7 @@ int do_pcap_cmd(pcap_args *pcapa);
 esp_err_t packet_capture(void *payload, uint32_t length, uint32_t seconds, uint32_t microseconds);
 esp_err_t sniff_packet_start(pcap_link_type_t link_type);
 
-int mount();
-int unmount();
+int mount_sd();
+int unmount_sd();
 
 #endif // _SD_ADAPTER

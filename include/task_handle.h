@@ -28,14 +28,16 @@ public:
     Task(const Task &task);
     ~Task();
     std::string generateJson() const;
-    void parseJson(std::string);
+    void parseJson(char *);
     void do_task();
+    void stop_task();
+    std::map<std::string, std::string>& get_params_map();
     task_type get_task_type() const {
         return tt;
     }
     int32_t duration;
-private:
     int32_t id;
+private:
     outputMode omode;
     task_type tt;
     std::map<std::string, std::string> params;

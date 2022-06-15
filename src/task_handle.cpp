@@ -1,5 +1,6 @@
 #include "task_handle.h"
 #include "sniffer.h"
+#include "sd_adapter.h"
 #include "netw_scan.h"
 
 #include "esp_log.h"
@@ -32,22 +33,65 @@ std::string Task::generateJson() const {
     return "";
 }
 
-void Task::parseJson(std::string json) {
+void Task::parseJson(char *json) {
     ESP_LOGI(TAG, "parse Json");
+}
+
+std::map<std::string, std::string>& Task::get_params_map() {
+    return params;
+}
+
+static sniffer_args_t parse_sniff_params(const std::map<std::string, std::string> &m) {
+    sniffer_args_t res;
+    res.stop = 0;
+    if (m.find("channel") != m.end())
+        res.channel = std::stoi(m.at("channel"));
+    else
+        res.channel = 1;
+    if (m.find("count") != m.end())
+        res.number = std::stoi(m.at("number"));
+    else
+        res.number = -1;
+    return res;
 }
 
 void Task::do_task() {
     switch (tt)
     {
-    case task_type::SNIFF_CHANNEL:
-        wifi_sniffer_init();
-        wifi_sniffer_set_channel(1);
-        wifi_sniffer_start();
+    case task_type::SNIFF_CHANNEL: {	
+        pcap_args start_pcap;
+        start_pcap.close = 0;
+        start_pcap.file = "sniff_id" + std::to_string(id);
+        start_pcap.open = 1;
+        start_pcap.summary = 0;
+        do_pcap_cmd(&start_pcap);
+        sniffer_args_t start_sniff = parse_sniff_params(params);
+        ESP_LOGI(TAG, "Channel %d", start_sniff.channel);
+        do_sniffer_cmd(&start_sniff);
         break;
+    }
     case task_type::SCAN_AP_ALL:
         wifi_netw_scan();
+        break;
     case task_type::SLEEP:
         break;
+    default:
+        break;
+    }
+}
+
+void Task::stop_task() {
+    switch (tt)
+    {
+    case task_type::SNIFF_CHANNEL: {        
+        pcap_args stop_pcap;
+        stop_pcap.close = 1;
+        sniffer_args_t stop_sniff;
+        stop_sniff.stop = 1;
+        do_sniffer_cmd(&stop_sniff);
+        do_pcap_cmd(&stop_pcap);
+        break;
+    }
     default:
         break;
     }

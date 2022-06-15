@@ -201,7 +201,7 @@ int do_pcap_cmd(pcap_args *pcapa)
 
     //??
     /* set pcap file name: "-f" option */
-    int len = snprintf(pcap_cmd_rt.filename, sizeof(pcap_cmd_rt.filename), "%s/%s.pcap", SNIFFER_MOUNT_POINT, pcapa->file);
+    int len = snprintf(pcap_cmd_rt.filename, sizeof(pcap_cmd_rt.filename), "%s/%s.pcap", SNIFFER_MOUNT_POINT, pcapa->file.c_str());
     if (len >= sizeof(pcap_cmd_rt.filename)) {
         ESP_LOGW(TAG, "pcap file name too long, try to enlarge memory in menuconfig");
     }
@@ -423,7 +423,7 @@ err:
 }
 
 /** 'mount' command */
-int mount()
+int mount_sd()
 {
     int32_t ret;
     ESP_LOGI(TAG, "Initializing SD card");
@@ -476,7 +476,7 @@ int mount()
     return 0;
 }
 
-int unmount()
+int unmount_sd()
 {
     if (esp_vfs_fat_sdmmc_unmount() != ESP_OK) {
         ESP_LOGE(TAG, "Card unmount failed");

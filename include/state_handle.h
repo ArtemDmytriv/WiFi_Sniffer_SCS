@@ -4,10 +4,13 @@
 #include "task_handle.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/semphr.h"
 #include <queue>
 #include <vector>
 
+extern xSemaphoreHandle task_sem;
 extern xTaskHandle main_handle;
+extern xTaskHandle task_getter_handle;
 
 const std::vector<const char*> devstate2str_vec = {
     "Init state",
@@ -59,6 +62,7 @@ public:
     DevState& operator=(const DevState &state);
     ~DevState();
     void do_job();
+    void remove_task();
     void set_task(Task *task) {
         task_to_do = task;
     }

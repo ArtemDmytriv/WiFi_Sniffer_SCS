@@ -8,6 +8,8 @@
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/semphr.h"
+
 #include "string.h"
 #include "esp_wifi.h"
 #include "esp_wifi_types.h"
@@ -25,11 +27,6 @@ extern "C" {
 //#include "font8x8_basic.h"
 }
 
-#define PIN_NUM_MISO 2
-#define PIN_NUM_MOSI 15
-#define PIN_NUM_CLK  14
-#define PIN_NUM_CS   13
-
 // WiFi defines
 #define	WIFI_CHANNEL_MAX		(13)
 #define	WIFI_CHANNEL_SWITCH_INTERVAL	(500)
@@ -37,7 +34,6 @@ extern "C" {
 static const char *TAG = "main";
 
 extern "C" void app_main(void);
-static esp_err_t event_handler(void *ctx, system_event_t *event);
 
 static void initialize_nvs(void)
 {
@@ -56,114 +52,82 @@ static void initialize_wifi(void)
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
     ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
-}
 
-static void main_loop_decorator(void *arg)
-{
-	StateMachine main_state_machine;
-	main_state_machine.setup(DevConfigure{}); 
-	
-	main_state_machine.task_queue.emplace(new Task{1, outputMode::JSON_RESPONSE, 10, task_type::SCAN_AP_ALL});
-	main_state_machine.task_queue.emplace(new Task{2, outputMode::JSON_RESPONSE, 20, task_type::SCAN_AP_ALL});
-	main_state_machine.task_queue.emplace(new Task{3, outputMode::JSON_RESPONSE, 20, task_type::SCAN_AP_ALL});
-
-	main_state_machine.main_loop();
-}
-
-xTaskHandle main_handle;
-
-void app_main(void) {
-	SSD1306_t dev;
-	
-	/* setup */
-	initialize_nvs();
-	initialize_wifi();  
-	initialize_ssd1306(&dev);
-	
-	
 	ESP_ERROR_CHECK(esp_netif_init());
 	ESP_ERROR_CHECK(esp_event_loop_create_default());
 	esp_netif_t *sta_netif = esp_netif_create_default_wifi_sta();
     assert(sta_netif);
-    
+
   	ESP_ERROR_CHECK(esp_wifi_start());// starts wifi usage
-	// initialize_sim808Uart();
+}
+
+xSemaphoreHandle task_sem;
+xTaskHandle main_handle;
+xTaskHandle task_getter_handle;
+
+StateMachine *pmain_state_machine = nullptr;
+
+static void task_gprs_getter(void *arg) {
+	Task *task = nullptr;
+	do_sim808_action(sim808_command::INIT_GPRS);
+	vTaskSuspend(NULL);
+	for(;;) {
+		ESP_LOGI(TAG, LOG_COLOR(LOG_COLOR_BROWN) "Waiting Semaphore..." LOG_RESET_COLOR);
+		if (xSemaphoreTake(task_sem, ( TickType_t ) 10) == pdTRUE) {
+			ESP_LOGI(TAG, LOG_COLOR(LOG_COLOR_BROWN) "Take Semaphore" LOG_RESET_COLOR);
+            vTaskSuspend(main_handle);
+			task = do_sim808_action(sim808_command::GET_TASK_URL);
+			if (task)
+				pmain_state_machine->task_queue.push(task);
+			ESP_LOGI(TAG, LOG_COLOR(LOG_COLOR_BROWN) "Give Semaphore" LOG_RESET_COLOR);
+			xSemaphoreGive(task_sem);
+            vTaskResume(main_handle);
+		}
+		vTaskDelay(1000 / portTICK_PERIOD_MS);
+	}
+}
+
+
+static void main_loop_decorator(void *arg)
+{
+	StateMachine main_state_machine;
+	pmain_state_machine = &main_state_machine;
+	vTaskResume(task_getter_handle);
+
+	main_state_machine.setup(DevConfigure{});
+
+	main_state_machine.task_queue.emplace(new Task{1, outputMode::JSON_RESPONSE, 10, task_type::SNIFF_CHANNEL});
+	main_state_machine.task_queue.front()->get_params_map().insert({"channel","1"});
+
+	main_state_machine.task_queue.emplace(new Task{2, outputMode::JSON_RESPONSE, 10, task_type::SNIFF_CHANNEL});
+	main_state_machine.task_queue.front()->get_params_map().insert({"channel","5"});
+
+	main_state_machine.task_queue.emplace(new Task{3, outputMode::JSON_RESPONSE, 10, task_type::SCAN_AP_ALL});
+
+	main_state_machine.main_loop();
+}
+
+void app_main(void) {
+	SSD1306_t dev;
+
+	ESP_LOGI(TAG, "Start app_main");
+	/* setup */
+	initialize_nvs();
+	initialize_wifi();
+	initialize_ssd1306(&dev);
+	initialize_sim808Uart();
 	// Test OLED
 	ssd1306_contrast(&dev, 0xff);
 	ssd1306_display_text(&dev, 0, "WiFISniffer\n", 11, false);
 
-	//wifi_netw_scan_with_config(NULL);
-	
 	// init SD
-	mount();
-
-	pcap_args start_pcap;
-	start_pcap.close = 0;
-	start_pcap.file = "test_sniff";
-	start_pcap.open = 1;
-	start_pcap.summary = 0;
+	mount_sd();
 	
-	sniffer_args_t start_sniff;
-	start_sniff.channel = 1;
-	start_sniff.filters = {};
-	start_sniff.number = -1;
-	start_sniff.stop = 0;
+	vTaskDelay(2000 / portTICK_PERIOD_MS);
 
-	sniffer_args_t stop_sniff;
-	stop_sniff.stop = 1;
+    task_sem = xSemaphoreCreateMutex();
 
-	pcap_args stop_pcap;
-	stop_pcap.close = 1;
-	stop_pcap.file = "test_sniff";
-	stop_pcap.open = 0;
-	stop_pcap.summary = 0;
-
-	do_pcap_cmd(&start_pcap);
-
-	ESP_LOGI(TAG, "Start sniff & Delay 20s");
-	do_sniffer_cmd(&start_sniff);
-	vTaskDelay(20000 / portTICK_PERIOD_MS);
-
-	ESP_LOGI(TAG, "Stop sniff");
-	do_sniffer_cmd(&stop_sniff);
-	do_pcap_cmd(&stop_pcap);
-
-	for (;;) {
-		vTaskDelay(2000 / portTICK_PERIOD_MS);
-		ESP_LOGI(TAG, "Idle");
-	}
-	//xTaskCreate(main_loop_decorator, "Main Task", 5*1024, NULL, 1, &main_handle);
-/*
-	StateMachine main_state_machine;
-	main_state_machine.setup(DevConfigure{}); 
+	xTaskCreate(task_gprs_getter, "Task getter", 2*1024, NULL, 1, &task_getter_handle);
 	
-	main_state_machine.task_queue.emplace(new Task{1, outputMode::JSON_RESPONSE, 10, task_type::SCAN_AP_ALL});
-	main_state_machine.task_queue.emplace(new Task{2, outputMode::JSON_RESPONSE, 20, task_type::SCAN_AP_ALL});
-	main_state_machine.task_queue.emplace(new Task{3, outputMode::JSON_RESPONSE, 20, task_type::SCAN_AP_ALL});
-
-	main_state_machine.main_loop();
-*/
-	//wifi_sniffer_init();
-	
-	// char oled_buffer[64] = {};
-	// uint8_t *data = (uint8_t *) malloc(BUF_SIZE);
-	// /* loop */
-	// while (true) {
-	// 	//wifi_sniffer_set_channel(channel);
-	// 	//wifi_netw_scan();
-	// 	ESP_LOGI(TAG, "State: %s", main_state_machine.get_device_state().get_cstr());
-	// 	strncpy(oled_buffer, main_state_machine.get_device_state().get_cstr(), 64);
-	// 	ssd1306_display_text(&dev, 0, oled_buffer, strlen(oled_buffer), false);
-	// 	//channel = (channel % WIFI_CHANNEL_MAX) + 1;
-
-	// 	// Read data from the UART
-    //     int len = uart_read_bytes(UART_SIM808_PORT_NUM, data, (BUF_SIZE - 1), 20 / portTICK_PERIOD_MS);
-    //     // Write data back to the UART
-    //     // uart_write_bytes(UART_SIM808_PORT_NUM, (const char *) data, len);
-    //     if (len) {
-    //         data[len] = '\0';
-    //         ESP_LOGI(TAG, "Recv str: %s", (char *) data);
-    //     }
-	// 	vTaskDelay(2000 / portTICK_PERIOD_MS);
-    // }
+	xTaskCreate(main_loop_decorator, "Main Task", 5*1024, NULL, 1, &main_handle);
 }
