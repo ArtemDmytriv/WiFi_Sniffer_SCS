@@ -1,4 +1,5 @@
 #include "state_handle.h"
+#include "sniffer.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -9,6 +10,8 @@ const char *DevState::TAG = "DevState";
 
 DevState::DevState(device_state_type state, Task *ptr) : _s(state), task_to_do(ptr) { 
     ESP_LOGI(DevState::TAG, "ctor");
+    if (this->task_to_do)
+        ESP_LOGI(DevState::TAG, "Duartion State %d", this->task_to_do->duration);
 }
 
 // ?
@@ -30,10 +33,6 @@ DevState& DevState::operator=(const DevState &state) {
 
 DevState::~DevState() { 
     ESP_LOGI(DevState::TAG, "dtor");
-    if (task_to_do) {
-        delete task_to_do;
-    }
-    task_to_do = nullptr;
 }
 
 void DevState::change_state(device_state_type state) {
@@ -42,7 +41,18 @@ void DevState::change_state(device_state_type state) {
 }
 
 void DevState::do_job() {
-    ESP_LOGI(DevState::TAG, "Do some job");
+    uint32_t start = esp_log_timestamp(),
+                end = 0;
+    ESP_LOGI(DevState::TAG, "Do some job, start Tick %d", start);
+    task_to_do->do_task();
+    for(;;) {
+        task_to_do->do_task();
+        vTaskDelay(50 / portTICK_PERIOD_MS);
+        end = esp_log_timestamp();
+        if ((end - start) > task_to_do->duration * 1000)
+            break;
+    }
+    vTaskResume(main_handle);
 }
 
 
@@ -132,25 +142,53 @@ static DevConfigure get_configure_for_state(const DevState &ds) {
     return val;
 }
 
+static void task_decorator(void *arg) {
+    DevState *s = (DevState *)arg;
+    for(;;) {
+        if (s)
+            s->do_job();
+    }
+} 
+
 void StateMachine::main_loop() {
     ESP_LOGI(TAG, "main_loop job");
     do_job = false;
+    DevState sleep_state = DevState{s_type::SLEEP};
+    xTaskHandle xth;
+    xTaskCreate(task_decorator, "Worker", 5*1024, &_current_state, 1, &xth);
+    vTaskSuspend(xth);
     for (;;) {
+        ESP_LOGI(TAG, "loop iter");
         if (!do_job && !task_queue.empty()) {
+            ESP_LOGI(TAG, "Get Task from queue");
             Task *new_task = task_queue.front();
             task_queue.pop();
+            ESP_LOGI(TAG, "Task Duration %d", new_task->duration);
             _current_state = DevState{get_state_for_task(new_task->get_task_type()), new_task};
             this->setup(get_configure_for_state(_current_state));
             do_job = true;
         }
         else if (!do_job) {
-            _current_state = DevState{s_type::SLEEP};
+            _current_state = sleep_state;
         }
 
         if (do_job) {
-            _current_state.do_job();
-        }       
-        vTaskDelay(100 / portTICK_PERIOD_MS);
+            ESP_LOGI(TAG,"Start task");
+            //_current_state.do_job();
+            vTaskResume(xth);
+            vTaskSuspend(NULL);
+            ESP_LOGI(TAG,"End task");
+            if (_current_state.get_dev_state() == s_type::WIFI_SNIFFER) {
+                ESP_LOGI(TAG,"Disable sniffer");    
+                wifi_sniffer_stop();
+            }
+            delete _current_state.get_task();
+            vTaskSuspend(xth);
+            do_job = false;
+        }
+        else {
+            vTaskDelay(500 / portTICK_PERIOD_MS);
+        }
     }
 
 }

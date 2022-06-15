@@ -1,7 +1,7 @@
 #ifndef _CUSTOM_SCAN_H
 #define _CUSTOM_SCAN_H
 
-#define DEFAULT_SCAN_LIST_SIZE 100
+#define DEFAULT_SCAN_LIST_SIZE 10
 #define ALL_CHANNELS -1
 
 #include "esp_wifi_types.h"

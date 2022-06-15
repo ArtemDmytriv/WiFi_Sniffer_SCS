@@ -33,10 +33,10 @@ public:
     task_type get_task_type() const {
         return tt;
     }
+    int32_t duration;
 private:
     int32_t id;
     outputMode omode;
-    int32_t duration;
     task_type tt;
     std::map<std::string, std::string> params;
     

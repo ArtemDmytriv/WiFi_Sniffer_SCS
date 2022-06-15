@@ -2,8 +2,12 @@
 #define _STATE_HANDLER_H
 
 #include "task_handle.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include <queue>
 #include <vector>
+
+extern xTaskHandle main_handle;
 
 const std::vector<const char*> devstate2str_vec = {
     "Init state",

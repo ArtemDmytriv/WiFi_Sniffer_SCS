@@ -3,6 +3,26 @@
 
 #include "esp_wifi_types.h"
 
+
+typedef enum {
+    SNIFFER_INTF_UNKNOWN = 0,
+    SNIFFER_INTF_WLAN, /*!< WLAN interface */
+    SNIFFER_INTF_ETH, /*!< Ethernet interface */
+} sniffer_intf_t;
+
+
+// WLAN Sniffer Filter
+typedef enum {
+    SNIFFER_WLAN_FILTER_MGMT = 0, /*!< MGMT */
+    SNIFFER_WLAN_FILTER_CTRL,     /*!< CTRL */
+    SNIFFER_WLAN_FILTER_DATA,     /*!< DATA */
+    SNIFFER_WLAN_FILTER_MISC,     /*!< MISC */
+    SNIFFER_WLAN_FILTER_MPDU,     /*!< MPDU */
+    SNIFFER_WLAN_FILTER_AMPDU,    /*!< AMPDU */
+    SNIFFER_WLAN_FILTER_FCSFAIL,  /*!< When this bit is set, the hardware will receive packets for which frame check sequence failed */
+    SNIFFER_WLAN_FILTER_MAX
+} sniffer_wlan_filter_t;
+
 typedef struct {
 	unsigned frame_ctrl:16;
 	unsigned duration_id:16;
