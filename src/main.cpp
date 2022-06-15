@@ -102,6 +102,15 @@ void app_main(void) {
 	start_pcap.file = "test_sniff";
 	start_pcap.open = 1;
 	start_pcap.summary = 0;
+	
+	sniffer_args_t start_sniff;
+	start_sniff.channel = 1;
+	start_sniff.filters = {};
+	start_sniff.number = -1;
+	start_sniff.stop = 0;
+
+	sniffer_args_t stop_sniff;
+	stop_sniff.stop = 1;
 
 	pcap_args stop_pcap;
 	stop_pcap.close = 1;
@@ -110,10 +119,18 @@ void app_main(void) {
 	stop_pcap.summary = 0;
 
 	do_pcap_cmd(&start_pcap);
-	vTaskDelay(10000 / portTICK_PERIOD_MS);
+
+	ESP_LOGI(TAG, "Start sniff & Delay 20s");
+	do_sniffer_cmd(&start_sniff);
+	vTaskDelay(20000 / portTICK_PERIOD_MS);
+
+	ESP_LOGI(TAG, "Stop sniff");
+	do_sniffer_cmd(&stop_sniff);
 	do_pcap_cmd(&stop_pcap);
+
 	for (;;) {
 		vTaskDelay(2000 / portTICK_PERIOD_MS);
+		ESP_LOGI(TAG, "Idle");
 	}
 	//xTaskCreate(main_loop_decorator, "Main Task", 5*1024, NULL, 1, &main_handle);
 /*

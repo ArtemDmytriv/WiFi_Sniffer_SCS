@@ -268,9 +268,8 @@ static esp_err_t sniffer_start(sniffer_runtime_t *sniffer)
     esp_err_t ret = ESP_OK;
     pcap_link_type_t link_type;
     wifi_promiscuous_filter_t wifi_filter;
-    bool eth_set_promiscuous;
 
-    if (!(sniffer->is_running)) {
+    if (sniffer->is_running) {
 		ESP_LOGE(SNIFFER_TAG, "sniffer is already running");
 		return -1;
 	}
@@ -282,15 +281,18 @@ static esp_err_t sniffer_start(sniffer_runtime_t *sniffer)
     sniffer->is_running = true;
     sniffer->work_queue = xQueueCreate(SNIFFER_WORK_QUEUE_LEN, sizeof(sniffer_packet_info_t));
     if (!sniffer->work_queue) {
+        ESP_LOGE(SNIFFER_TAG, "Create xQueueCreate fail");
 		goto err_queue;
 	}
 	sniffer->sem_task_over = xSemaphoreCreateBinary();
 	if (!sniffer->sem_task_over) {
+        ESP_LOGE(SNIFFER_TAG, "Create xSemaphoreCreateBinary fail");
 		goto err_sem;
 	}
     
 	if (xTaskCreate(sniffer_task, "snifferT", SNIFFER_TASK_STACK_SIZE,
-		sniffer, SNIFFER_TASK_PRIORITY, &sniffer->task) != ESP_OK) {
+		sniffer, SNIFFER_TASK_PRIORITY, &sniffer->task) != pdPASS) {
+        ESP_LOGE(SNIFFER_TAG, "Create xTaskCreate fail");
 		goto err_task;
 	} 		
 
@@ -298,6 +300,7 @@ static esp_err_t sniffer_start(sniffer_runtime_t *sniffer)
 	esp_wifi_set_promiscuous_filter(&wifi_filter);
 	esp_wifi_set_promiscuous_rx_cb(wifi_sniffer_cb);
 	if (esp_wifi_set_promiscuous(true) != ESP_OK) {
+        ESP_LOGE(SNIFFER_TAG, "esp_wifi_set_promiscuous fail");
 		goto err_start;
 	}
 	esp_wifi_set_channel(sniffer->channel, WIFI_SECOND_CHAN_NONE);
@@ -315,12 +318,12 @@ err_sem:
     sniffer->work_queue = NULL;
 err_queue:
     sniffer->is_running = false;
-    return ret;
+    return ESP_FAIL;
 }
 
 int do_sniffer_cmd(sniffer_args_t* args_sniff )
 {
-    /* Check whether or not to stop sniffer: "--stop" option */
+	/* Check whether or not to stop sniffer: "--stop" option */
     if (args_sniff->stop) {
         /* stop sniffer */
         sniffer_stop(&snf_rt);
@@ -346,7 +349,7 @@ int do_sniffer_cmd(sniffer_args_t* args_sniff )
 		snf_rt.filter = WIFI_PROMIS_FILTER_MASK_ALL;
 	}
 
-    /* Check the number of captured packages: "-n" option */
+	/* Check the number of captured packages: "-n" option */
     snf_rt.packets_to_sniff = -1;
     if (args_sniff->number > 0) {
         snf_rt.packets_to_sniff = args_sniff->number; 
@@ -354,37 +357,6 @@ int do_sniffer_cmd(sniffer_args_t* args_sniff )
     }
 
     /* start sniffer */
-    sniffer_start(&snf_rt);
+	sniffer_start(&snf_rt);
     return 0;
 }
-
-// static void sniffer_task(void *parameters)
-// {
-//     sniffer_packet_info_t packet_info;
-//     sniffer_runtime_t *sniffer = (sniffer_runtime_t *)parameters;
-
-//     while (sniffer->is_running) {
-//         if (sniffer->packets_to_sniff == 0) {
-//             sniffer_stop(sniffer);
-//             break;
-//         }
-//         /* receive packet info from queue */
-//         if (xQueueReceive(sniffer->work_queue, &packet_info, pdMS_TO_TICKS(SNIFFER_PROCESS_PACKET_TIMEOUT_MS)) != pdTRUE) {
-//             continue;
-//         }
-//         if (packet_capture(packet_info.payload, packet_info.length, packet_info.seconds,
-//                            packet_info.microseconds) != ESP_OK) {
-//             ESP_LOGW(SNIFFER_TAG, "save captured packet failed");
-//         }
-//         free(packet_info.payload);
-//         if (sniffer->packets_to_sniff > 0) {
-//             sniffer->packets_to_sniff--;
-//         }
-
-//     }
-//     /* notify that sniffer task is over */
-//     if (sniffer->packets_to_sniff != 0) {
-//         xSemaphoreGive(sniffer->sem_task_over);
-//     }
-//     vTaskDelete(NULL);
-// }

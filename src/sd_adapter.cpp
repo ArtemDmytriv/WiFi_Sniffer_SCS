@@ -86,8 +86,9 @@ static esp_err_t pcap_open(pcap_cmd_runtime_t *pcap)
 {
     esp_err_t ret = ESP_OK;
     /* Create file to write, binary format */
-    FILE *fp = NULL;
 
+    FILE *fp = NULL;
+    ESP_LOGI(TAG, "Opening file %s", pcap->filename);
     fp = fopen(pcap->filename, "wb+");
 
     if (!fp) {
@@ -471,6 +472,7 @@ int mount()
         }
     /* print card info if mount successfully */
     sdmmc_card_print_info(stdout, sdcard_info);
+
     return 0;
 }
 
