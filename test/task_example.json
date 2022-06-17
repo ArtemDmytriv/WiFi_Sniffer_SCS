@@ -1,0 +1,12 @@
+[{
+    "id" : 12,
+    "task" : "sniffer",
+    "channel" : 5,
+    "filename" : "do_sniff5"
+},
+{
+    "id" : 13,
+    "task" : "sniffer",
+    "channel" : 10,
+    "filename" : "do_sniff10"
+}]

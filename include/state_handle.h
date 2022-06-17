@@ -22,29 +22,6 @@ const std::vector<const char*> devstate2str_vec = {
     "Sleep state"
 };
 
-enum DevConfigureOffset {
-    DEV_OFFSET_WIFI_SNIFF  = 0,
-    DEV_OFFSET_WIFI_SCAN   = 1,
-    DEV_OFFSET_UART_SIM808 = 2,
-    DEV_OFFSET_I2C_SSD1306 = 3,
-    DEV_OFFSET_SPI_SD      = 4,
-    DEV_OFFSET_SLEEP_MODE  = 5
-};
-
-union DevConfigure {
-    unsigned char 
-        isWifiSniffMode : 1,
-        isWifiScanMode  : 1,
-        isUART_SIM808   : 1,
-        isI2C_SSD1306   : 1,
-        isSPI_SD        : 1,
-        isSleep         : 1,
-        reserved1       : 1,
-        reserved2       : 1;
-    unsigned char value;
-    DevConfigure(unsigned char value = 0) : value(value) {}
-};
-
 class DevState {
 public:
     enum class device_state_type {
@@ -88,12 +65,8 @@ class StateMachine {
 public:
 
     StateMachine(DevState first_state = DevState{s_type::INIT_STATE});
-    void setup(DevConfigure configure_setup);
     void main_loop();
 
-    DevConfigure get_device_conf_status() const {
-        return _current_config;
-    }
     DevState& get_device_state() {
         return _current_state;
     }
@@ -102,7 +75,6 @@ public:
     }
     std::queue<Task*> task_queue;
 private:
-    DevConfigure _current_config;
     DevState _current_state;
     bool do_job;
     static const char *TAG; 

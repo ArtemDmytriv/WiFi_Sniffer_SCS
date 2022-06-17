@@ -201,7 +201,7 @@ int do_pcap_cmd(pcap_args *pcapa)
 
     //??
     /* set pcap file name: "-f" option */
-    int len = snprintf(pcap_cmd_rt.filename, sizeof(pcap_cmd_rt.filename), "%s/%s.pcap", SNIFFER_MOUNT_POINT, pcapa->file.c_str());
+    int len = snprintf(pcap_cmd_rt.filename, sizeof(pcap_cmd_rt.filename), "%s%s.pcap", SNIFFER_MOUNT_POINT, pcapa->file.c_str());
     if (len >= sizeof(pcap_cmd_rt.filename)) {
         ESP_LOGW(TAG, "pcap file name too long, try to enlarge memory in menuconfig");
     }

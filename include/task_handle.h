@@ -3,6 +3,7 @@
 
 #include <map>
 #include <string>
+#include "ArduinoJson.h"
 
 enum class outputMode {
     SD_CARD,
@@ -27,20 +28,23 @@ public:
     Task(Task &&task);
     Task(const Task &task);
     ~Task();
-    std::string generateJson() const;
-    void parseJson(char *);
     void do_task();
     void stop_task();
-    std::map<std::string, std::string>& get_params_map();
+    void parseJson_parameters(const JsonObject &ref);
+    void* get_params() {
+        return params;
+    }
     task_type get_task_type() const {
         return tt;
     }
+    void set_task_type(task_type mtt);
     int32_t duration;
     int32_t id;
 private:
     outputMode omode;
     task_type tt;
-    std::map<std::string, std::string> params;
+    std::string filename;
+    void *params;
     
     static const char *TAG; 
 };

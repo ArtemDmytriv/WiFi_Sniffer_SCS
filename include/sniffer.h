@@ -10,9 +10,11 @@ typedef struct {
     int channel;
     int stop;
     int number;
+    bool is_sta_sniff_mode;
 } sniffer_args_t;
 
 int do_sniffer_cmd(sniffer_args_t* args_sniff );
+void create_wifi_filter_hashtable(void);
 
 void wifi_sniffer_set_channel(uint8_t channel);
 const char *wifi_sniffer_packet_type2str(wifi_promiscuous_pkt_type_t type);

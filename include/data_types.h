@@ -3,8 +3,6 @@
 
 #include "esp_wifi_types.h"
 
-
-
 // WLAN Sniffer Filter
 typedef enum {
     SNIFFER_WLAN_FILTER_MGMT = 0, /*!< MGMT */

@@ -1,4 +1,6 @@
 #include "netw_scan.h"
+#include "sd_adapter.h"
+#include "sniffer.h"
 
 #include <string.h>
 #include "esp_wifi.h"
@@ -99,18 +101,41 @@ static void print_cipher_type(int pairwise_cipher, int group_cipher)
     }
 }
 
+typedef struct {
+    std::string file;
+} scan_args;
 
-void wifi_netw_scan_with_config(wifi_scan_config_t *scan_cfg) {
-    uint16_t number = DEFAULT_SCAN_LIST_SIZE;
-    wifi_ap_record_t ap_info[DEFAULT_SCAN_LIST_SIZE];
+void wifi_netw_scan_sta(wifi_scan_config_t *scan_cfg,  const std::string &filename) {
+
+}
+
+static std::string bssid2str(uint8_t *bssid) {
+    char buffer[28] = {};
+    snprintf(buffer, 28, "%02X:%02X:%02X:%02X:%02X:%02X", bssid[0], bssid[1], bssid[2], bssid[3], bssid[4], bssid[5]);
+    return std::string{buffer};
+}
+
+void wifi_netw_scan_with_config(wifi_scan_config_t *scan_cfg, const std::string &filename) {
+    uint16_t number = DEFAULT_SCAN_LIST_SIZE * 4;
+    wifi_ap_record_t *ap_info = (wifi_ap_record_t *)malloc( number * sizeof(wifi_ap_record_t) );
     uint16_t ap_count = 0;
-    memset(ap_info, 0, sizeof(ap_info));
+    
+    std::string full_path = SNIFFER_MOUNT_POINT + filename + ".txt";
+    ESP_LOGI(TAG, "Filename = %s", full_path.c_str());
+    FILE *result = fopen(full_path.c_str(), "w+");
+    if (!result) {
+        ESP_LOGE(TAG, "Failed to open file");
+        return;
+    }
+    memset(ap_info, 0, number * sizeof(wifi_ap_record_t));
 
     esp_wifi_scan_start(scan_cfg, true);
     ESP_ERROR_CHECK(esp_wifi_scan_get_ap_records(&number, ap_info));
     ESP_ERROR_CHECK(esp_wifi_scan_get_ap_num(&ap_count));
     ESP_LOGI(TAG, "Total APs scanned = %u", ap_count);
-    for (int i = 0; (i < DEFAULT_SCAN_LIST_SIZE) && (i < ap_count); i++) {
+
+    fprintf(result, "Total APs scanned = %u\n", ap_count);
+    for (int i = 0; (i < number) && (i < ap_count); i++) {
         ESP_LOGI(TAG, "SSID \t\t%s", ap_info[i].ssid);
         ESP_LOGI(TAG, "RSSI \t\t%d", ap_info[i].rssi);
         print_auth_mode(ap_info[i].authmode);
@@ -118,38 +143,22 @@ void wifi_netw_scan_with_config(wifi_scan_config_t *scan_cfg) {
             print_cipher_type(ap_info[i].pairwise_cipher, ap_info[i].group_cipher);
         }
         ESP_LOGI(TAG, "Channel \t\t%d\n", ap_info[i].primary);
+        
+        fprintf(result, "-----------------------------------------------\n");
+        fprintf(result, "SSID  = %s\n", ap_info[i].ssid);
+        fprintf(result, "BSSID = %s\n", bssid2str(ap_info[i].bssid).c_str());
+        fprintf(result, "RSSI  = %d\n", ap_info[i].rssi);
+        fprintf(result, "Chan  = %d\n", ap_info[i].primary);
     }    
+    fclose(result);
+    free(ap_info);
 }
 
-void wifi_netw_scan() {
-    wifi_netw_scan_with_config(NULL);
-}
-
-static void fast_scan(void)
-{
-    //ESP_ERROR_CHECK(esp_netif_init());
-    //ESP_ERROR_CHECK(esp_event_loop_create_default());
-
-    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-    ESP_ERROR_CHECK(esp_wifi_init(&cfg));
-
-    //ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &event_handler, NULL, NULL));
-    //ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &event_handler, NULL, NULL));
-
-    // Initialize default station as network interface instance (esp-netif)
-    esp_netif_t *sta_netif = esp_netif_create_default_wifi_sta();
-    assert(sta_netif);
-
-    // Initialize and start WiFi
-    wifi_config_t wifi_config;
-    strncpy((char*)wifi_config.sta.ssid, MGMT_SSID, sizeof(wifi_config.sta.ssid));
-    strncpy((char*)wifi_config.sta.password, MGMT_PWD, sizeof(wifi_config.sta.password));
-    wifi_config.sta.scan_method = MGMT_DEFAULT_SCAN_METHOD;
-    wifi_config.sta.sort_method = MGMT_DEFAULT_SORT_METHOD;
-    wifi_config.sta.threshold.rssi = MGMT_DEFAULT_RSSI;
-    wifi_config.sta.threshold.authmode = MGMT_DEFAULT_AUTHMODE;
-
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
-    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
-    ESP_ERROR_CHECK(esp_wifi_start());
+void wifi_netw_scan(const std::string &filename) {
+    wifi_scan_config_t default_scan_cfg;
+    memset(&default_scan_cfg, 0, sizeof(default_scan_cfg));
+    default_scan_cfg.scan_time.active.min = 1000;
+    default_scan_cfg.scan_time.active.max = 5000;
+    default_scan_cfg.scan_type = WIFI_SCAN_TYPE_ACTIVE;
+    wifi_netw_scan_with_config(&default_scan_cfg, filename);
 }

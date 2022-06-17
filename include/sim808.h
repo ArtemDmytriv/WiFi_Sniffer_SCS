@@ -9,15 +9,15 @@
 #define UART_SIM808_PORT_NUM   (CONFIG_UART_SIM808_PORT_NUM)
 #define UART_SIM808_BAUD_RATE  (CONFIG_UART_SIM808_BAUD_RATE)
 #define ECHO_TASK_STACK_SIZE   (CONFIG_EXAMPLE_TASK_STACK_SIZE)
-#define BUF_SIZE (1024)
+#define SIM808_BUFSIZE (1024)
 
 #include "task_handle.h"
 
 #include <utility>
 #include <string>
 #include <vector>
+#include <queue>
 
-#define SIM808_BUFSIZE 1024
 
 enum class sim808_command {
     INIT_MODULE,
@@ -56,9 +56,15 @@ const std::vector<std::pair<std::string, int32_t>> ATs_get_GPS = {
 };
 
 const std::vector<std::pair<std::string, int32_t>> ATs_GET_task = { 
-    {"AT+HTTPPARA=\"URL\",\"http://34.230.43.26/task.json\"\r\n", 800}, 
-    {"AT+HTTPACTION=0\r\n", 2000},
-    {"AT+HTTPREAD\r\n", 2000}
+    {"AT+HTTPPARA=\"URL\",\"http://34.230.43.26/task.json\"\r\n", 200},
+    {"AT+HTTPACTION=0\r\n", 4000},
+    {"AT+HTTPREAD\r\n", 4000}
+};
+
+const std::vector<std::pair<std::string, int32_t>> ATs_POST_task = { 
+    {"AT+HTTPPARA=\"URL\",\"http://34.230.43.26/task.json\"\r\n", 200}, 
+    {"AT+HTTPACTION=0\r\n", 4000},
+    {"AT+HTTPREAD\r\n", 4000}
 };
 
 const std::vector<std::pair<std::string, int32_t>> ATs_sleep = {
@@ -71,8 +77,7 @@ const std::vector<std::pair<std::string, int32_t>> ATs_wake = {
 
 void initialize_sim808Uart(void);
 
-Task * do_sim808_action(sim808_command action);
+void do_sim808_action(sim808_command action, std::queue<Task *> &pqueue);
 
-Task *get_task_sim808(void);
 
 #endif // _SIM808_H

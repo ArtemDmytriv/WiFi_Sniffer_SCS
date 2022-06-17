@@ -8,6 +8,9 @@
 #include "esp_wifi_types.h"
 #include "esp_system.h"
 
+#include <set>
+#include <array>
+
 #define SNIFFER_DEFAULT_CHANNEL             (1)
 #define SNIFFER_PAYLOAD_FCS_LEN             (4)
 #define SNIFFER_PROCESS_PACKET_TIMEOUT_MS   (100)
@@ -28,6 +31,7 @@ typedef struct {
 
 typedef struct {
     bool is_running;
+    bool is_sniff_sta;
     uint32_t interf_num;
     uint32_t channel;
     uint32_t filter;
@@ -35,7 +39,6 @@ typedef struct {
     TaskHandle_t task;
     QueueHandle_t work_queue;
     SemaphoreHandle_t sem_task_over;
-    esp_eth_handle_t eth_handles[SNIFFER_MAX_ETH_INTFS];
 } sniffer_runtime_t;
 
 typedef struct {
@@ -60,7 +63,7 @@ static uint32_t hash_func(const char *str, uint32_t max_num)
     return ret % max_num;
 }
 
-static void create_wifi_filter_hashtable(void)
+void create_wifi_filter_hashtable(void)
 {
     const char *wifi_filter_keys[SNIFFER_WLAN_FILTER_MAX] = {"mgmt", "data", "ctrl", "misc", "mpdu", "ampdu", "fcsfail"};
     uint32_t wifi_filter_values[SNIFFER_WLAN_FILTER_MAX] = {WIFI_PROMIS_FILTER_MASK_MGMT, WIFI_PROMIS_FILTER_MASK_DATA,
@@ -165,6 +168,49 @@ static void sniffer_task(void *parameters)
     vTaskDelete(NULL);
 }
 
+static void sniffer_task_sta(void *parameters) 
+{
+    std::set<std::array<uint8_t, 6>> set_bssid;
+    sniffer_packet_info_t packet_info;
+    sniffer_runtime_t *sniffer = (sniffer_runtime_t *)parameters;
+
+    wifi_ieee80211_packet_t *ipkt;
+    wifi_ieee80211_mac_hdr_t *hdr;
+
+    while (sniffer->is_running) {
+        if (sniffer->packets_to_sniff == 0) {
+            sniffer_stop(sniffer);
+            break;
+        }
+        /* receive packet info from queue */
+        if (xQueueReceive(sniffer->work_queue, &packet_info, pdMS_TO_TICKS(SNIFFER_PROCESS_PACKET_TIMEOUT_MS)) != pdTRUE) {
+            continue;
+        }
+        ipkt = (wifi_ieee80211_packet_t *)packet_info.payload;
+        hdr = (wifi_ieee80211_mac_hdr_t *)&ipkt->hdr;
+        std::array<uint8_t, 6> arr;
+
+        for (int i = 0; i < 3; i++) {
+            memcpy(arr.begin(), hdr->addr1 + i * 6, 6 * sizeof(uint8_t));
+            if (set_bssid.find(arr) == set_bssid.end()) {
+                set_bssid.insert(arr);
+            }
+        }
+
+        free(packet_info.payload);
+        if (sniffer->packets_to_sniff > 0) {
+            sniffer->packets_to_sniff--;
+        }
+
+    }
+    /* notify that sniffer task is over */
+    if (sniffer->packets_to_sniff != 0) {
+        xSemaphoreGive(sniffer->sem_task_over);
+    }
+    ESP_LOGE(SNIFFER_TAG, "SET created %d", set_bssid.size());
+    vTaskDelete(NULL);
+}
+
 static esp_err_t sniffer_stop(sniffer_runtime_t *sniffer)
 {
     esp_err_t ret = ESP_OK;
@@ -232,11 +278,11 @@ static esp_err_t sniffer_start(sniffer_runtime_t *sniffer)
 		goto err_sem;
 	}
     
-	if (xTaskCreate(sniffer_task, "snifferT", SNIFFER_TASK_STACK_SIZE,
+    if (xTaskCreate(sniffer->is_sniff_sta? sniffer_task_sta : sniffer_task, "snifferT", SNIFFER_TASK_STACK_SIZE,
 		sniffer, SNIFFER_TASK_PRIORITY, &sniffer->task) != pdPASS) {
         ESP_LOGE(SNIFFER_TAG, "Create xTaskCreate fail");
 		goto err_task;
-	} 		
+	}
 
 	wifi_filter.filter_mask = sniffer->filter;
 	esp_wifi_set_promiscuous_filter(&wifi_filter);
@@ -271,33 +317,38 @@ int do_sniffer_cmd(sniffer_args_t* args_sniff )
         sniffer_stop(&snf_rt);
         return 0;
     }
-
-    /* Check interface: "-i" option */
-
-    snf_rt.channel = args_sniff->channel;
     
-	/* Check filter setting: "-F" option */
-    if (!args_sniff->filters.empty()) {
-		snf_rt.filter = 0;
-		for (int i = 0; i < args_sniff->filters.size(); i++) {
-			snf_rt.filter += search_wifi_filter_hashtable(args_sniff->filters[i].c_str());
-		}
-		/* When filter conditions are all wrong */
-		if (snf_rt.filter == 0) {
-			snf_rt.filter = WIFI_PROMIS_FILTER_MASK_ALL;
-		}
-	} else {
-		snf_rt.filter = WIFI_PROMIS_FILTER_MASK_ALL;
-	}
-
-	/* Check the number of captured packages: "-n" option */
+    snf_rt.is_sniff_sta = args_sniff->is_sta_sniff_mode;
     snf_rt.packets_to_sniff = -1;
-    if (args_sniff->number > 0) {
-        snf_rt.packets_to_sniff = args_sniff->number; 
-        ESP_LOGI(SNIFFER_TAG, "%d packages will be captured", snf_rt.packets_to_sniff);
-    }
+    snf_rt.channel = args_sniff->channel;
 
+    if (snf_rt.is_sniff_sta) {
+        snf_rt.filter = WIFI_PROMIS_FILTER_MASK_ALL;
+    }
+    else {
+        /* Check filter setting: "-F" option */
+        if (!args_sniff->filters.empty()) {
+            snf_rt.filter = 0;
+            for (int i = 0; i < args_sniff->filters.size(); i++) {
+                snf_rt.filter += search_wifi_filter_hashtable(args_sniff->filters[i].c_str());
+            }
+            /* When filter conditions are all wrong */
+            if (snf_rt.filter == 0) {
+                snf_rt.filter = WIFI_PROMIS_FILTER_MASK_ALL;
+            }
+        } else {
+            snf_rt.filter = WIFI_PROMIS_FILTER_MASK_ALL;
+        }
+
+        /* Check the number of captured packages: "-n" option */
+        
+        if (args_sniff->number > 0) {
+            snf_rt.packets_to_sniff = args_sniff->number; 
+            ESP_LOGI(SNIFFER_TAG, "%d packages will be captured", snf_rt.packets_to_sniff);
+        }
+    }
     /* start sniffer */
+    
 	sniffer_start(&snf_rt);
     return 0;
 }

@@ -68,22 +68,18 @@ xTaskHandle task_getter_handle;
 StateMachine *pmain_state_machine = nullptr;
 
 static void task_gprs_getter(void *arg) {
-	Task *task = nullptr;
-	do_sim808_action(sim808_command::INIT_GPRS);
 	vTaskSuspend(NULL);
+	do_sim808_action(sim808_command::INIT_GPRS, pmain_state_machine->task_queue);
 	for(;;) {
-		ESP_LOGI(TAG, LOG_COLOR(LOG_COLOR_BROWN) "Waiting Semaphore..." LOG_RESET_COLOR);
+		ESP_LOGI("gprs_getter", LOG_COLOR(LOG_COLOR_BROWN) "Waiting Semaphore..." LOG_RESET_COLOR);
 		if (xSemaphoreTake(task_sem, ( TickType_t ) 10) == pdTRUE) {
-			ESP_LOGI(TAG, LOG_COLOR(LOG_COLOR_BROWN) "Take Semaphore" LOG_RESET_COLOR);
-            vTaskSuspend(main_handle);
-			task = do_sim808_action(sim808_command::GET_TASK_URL);
-			if (task)
-				pmain_state_machine->task_queue.push(task);
-			ESP_LOGI(TAG, LOG_COLOR(LOG_COLOR_BROWN) "Give Semaphore" LOG_RESET_COLOR);
+			ESP_LOGI("gprs_getter", LOG_COLOR(LOG_COLOR_BROWN) "Take Semaphore" LOG_RESET_COLOR);
+			do_sim808_action(sim808_command::GET_TASK_URL, pmain_state_machine->task_queue);
+
+			ESP_LOGI("gprs_getter", LOG_COLOR(LOG_COLOR_BROWN) "Give Semaphore" LOG_RESET_COLOR);
 			xSemaphoreGive(task_sem);
-            vTaskResume(main_handle);
 		}
-		vTaskDelay(1000 / portTICK_PERIOD_MS);
+		vTaskDelay(10000 / portTICK_PERIOD_MS);
 	}
 }
 
@@ -93,19 +89,19 @@ static void main_loop_decorator(void *arg)
 	StateMachine main_state_machine;
 	pmain_state_machine = &main_state_machine;
 	vTaskResume(task_getter_handle);
-
-	main_state_machine.setup(DevConfigure{});
-
-	main_state_machine.task_queue.emplace(new Task{1, outputMode::JSON_RESPONSE, 10, task_type::SNIFF_CHANNEL});
-	main_state_machine.task_queue.front()->get_params_map().insert({"channel","1"});
-
-	main_state_machine.task_queue.emplace(new Task{2, outputMode::JSON_RESPONSE, 10, task_type::SNIFF_CHANNEL});
-	main_state_machine.task_queue.front()->get_params_map().insert({"channel","5"});
-
-	main_state_machine.task_queue.emplace(new Task{3, outputMode::JSON_RESPONSE, 10, task_type::SCAN_AP_ALL});
+	//main_state_machine.task_queue.emplace(new Task{3, outputMode::SD_CARD, 10, task_type::SCAN_STA});
 
 	main_state_machine.main_loop();
 }
+// 	main_state_machine.task_queue.emplace(new Task{1, outputMode::JSON_RESPONSE, 10, task_type::SNIFF_CHANNEL});
+// 	main_state_machine.task_queue.front()->get_params_map().insert({"channel","1"});
+
+// 	main_state_machine.task_queue.emplace(new Task{2, outputMode::JSON_RESPONSE, 10, task_type::SNIFF_CHANNEL});
+// 	main_state_machine.task_queue.front()->get_params_map().insert({"channel","5"});
+
+
+// 	main_state_machine.main_loop();
+// }
 
 void app_main(void) {
 	SSD1306_t dev;
@@ -116,18 +112,15 @@ void app_main(void) {
 	initialize_wifi();
 	initialize_ssd1306(&dev);
 	initialize_sim808Uart();
-	// Test OLED
 	ssd1306_contrast(&dev, 0xff);
-	ssd1306_display_text(&dev, 0, "WiFISniffer\n", 11, false);
+	ssd1306_display_text(&dev, 0, "--WiFi-Sniffer--", 17, false);
+	ssd1306_display_text(&dev, 1, "----------------", 17, false);
 
 	// init SD
 	mount_sd();
-	
+	create_wifi_filter_hashtable();
 	vTaskDelay(2000 / portTICK_PERIOD_MS);
-
     task_sem = xSemaphoreCreateMutex();
-
-	xTaskCreate(task_gprs_getter, "Task getter", 2*1024, NULL, 1, &task_getter_handle);
-	
-	xTaskCreate(main_loop_decorator, "Main Task", 5*1024, NULL, 1, &main_handle);
+	xTaskCreate(task_gprs_getter, "Task getter", 3*1024, NULL, 1, &task_getter_handle);
+	xTaskCreate(main_loop_decorator, "Main Loop Task", 5*1024, NULL, 1, &main_handle);
 }
