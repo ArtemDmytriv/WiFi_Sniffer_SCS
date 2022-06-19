@@ -1,6 +1,6 @@
 #include "state_handle.h"
 #include "sniffer.h"
-
+#include <cmath>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
@@ -10,7 +10,6 @@
 const char *DevState::TAG = "DevState";
 
 DevState::DevState(device_state_type state, Task *ptr) : _s(state), task_to_do(ptr) { 
-    ESP_LOGI(DevState::TAG, "ctor");
 }
 
 // ?
@@ -29,7 +28,6 @@ DevState& DevState::operator=(const DevState &state) {
 }
 
 DevState::~DevState() { 
-    ESP_LOGI(DevState::TAG, "dtor");
 }
 
 void DevState::change_state(device_state_type state) {
@@ -38,6 +36,8 @@ void DevState::change_state(device_state_type state) {
 }
 
 void DevState::do_job() {
+    std::string oled_progress_bar(' ', 17);
+    int oled_progress_bar_k = 1;
     uint32_t start = esp_log_timestamp(),
                 end = 0;
     ESP_LOGI(DevState::TAG, "Do some job, start Tick %d", start);
@@ -49,9 +49,13 @@ void DevState::do_job() {
         end = esp_log_timestamp();
         if ((end - start) > task_to_do->duration * 1000)
             break;
+        if ( (int)floor((double)(end - start) / (task_to_do->duration * 1000) * 17) == oled_progress_bar_k )  {
+            oled_progress_bar[oled_progress_bar_k - 1] = '#';
+            oled_progress_bar_k++;
+            ssd1306_display_text(&dev, 3, oled_progress_bar.c_str(), oled_progress_bar.size(), false);
+        }
     }
-    //vTaskResume(main_handle);
-    //vTaskSuspend(NULL);
+    ssd1306_clear_line(&dev, 3, false);
 }
 
 void DevState::remove_task() {
@@ -98,13 +102,15 @@ static s_type get_state_for_task(const task_type &tt) {
 void StateMachine::main_loop() {
     ESP_LOGI(TAG, "main_loop job");
     bool need_do_task = false;
+    int idle_count = 18;
+    std::string cur_state;
 
     for (;;) {
         ESP_LOGI(TAG, "Idle");
         if (!need_do_task && !task_queue.empty()) { // get task if "task_getter" sleep and queue not empty
             if (xSemaphoreTake(task_sem, ( TickType_t ) 10) == pdTRUE) {
                 Task *new_task = task_queue.front();
-                ESP_LOGI(TAG, "Get Task from queue %d", new_task->id);
+                ESP_LOGI(TAG, "Get Task from queue id=%d", new_task->id);
                 task_queue.pop();
                 ESP_LOGI(TAG, "Task Duration %d", new_task->duration);
                 _current_state = std::move(DevState{get_state_for_task(new_task->get_task_type()), new_task});
@@ -116,6 +122,11 @@ void StateMachine::main_loop() {
         if (need_do_task) { // if we take task from queue
             vTaskSuspend(task_getter_handle);
             ESP_LOGI(TAG,"Start task");
+
+            cur_state = devstate2str_vec[static_cast<int>(_current_state.get_dev_state())];
+            cur_state = "State:" + cur_state;
+            ssd1306_clear_line(&dev, 2, false);
+            ssd1306_display_text(&dev, 2, cur_state.c_str(), cur_state.size(), false);
             _current_state.do_job(); // do task
 
             ESP_LOGI(TAG,"End task");
@@ -125,8 +136,15 @@ void StateMachine::main_loop() {
             need_do_task = false;
         }
         else {
-            vTaskResume(task_getter_handle);
-            vTaskDelay(5000 / portTICK_PERIOD_MS);
+            idle_count += 1;
+            ssd1306_clear_line(&dev, 2, false);
+            ssd1306_display_text(&dev, 2, "State: IDLE", sizeof("State: IDLE"), false);
+            if (idle_count > 20) {
+                ssd1306_display_text(&dev, 2, "State: Get Task", sizeof("State: Get Task"), false);
+                vTaskResume(task_getter_handle);
+                idle_count = 0;
+            }
+            vTaskDelay(2500 / portTICK_PERIOD_MS);
         }
     }
 

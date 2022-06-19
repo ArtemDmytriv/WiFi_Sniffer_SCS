@@ -12,12 +12,15 @@
 #define SIM808_BUFSIZE (1024)
 
 #include "task_handle.h"
-
+extern "C" {
+    #include "ssd1306.h"
+}
 #include <utility>
 #include <string>
 #include <vector>
 #include <queue>
 
+extern SSD1306_t dev;
 
 enum class sim808_command {
     INIT_MODULE,

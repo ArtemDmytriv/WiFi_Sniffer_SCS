@@ -26,6 +26,10 @@ static task_type str2type_task(const std::string &str) {
 		return task_type::SNIFF_STA;
 	if (str == "scan_all")
 		return task_type::SCAN_AP_ALL;
+	if (str == "scan_sta")
+		return task_type::SCAN_STA;
+	if (str == "scan")
+		return task_type::SCAN_AP_PARAMS;
 	return task_type::SLEEP;
 }
 
@@ -33,20 +37,32 @@ static int32_t parseJson(char* json, std::queue<Task *> &queue) {
 	DynamicJsonDocument doc(512);
 	deserializeJson(doc, json);
 	JsonArray arr = doc.as<JsonArray>();
+	int k = 0;
 	ESP_LOGI(TAG, "Parse json");
 	for (JsonObject repo : arr) {
 		if (repo.containsKey("id") && repo.containsKey("task")) {
-			Task *new_task = new Task{repo["id"].as<int>(), outputMode::SD_CARD, repo["duration"].as<int>() | 10, task_type::SLEEP};
-			std::string task_type_val = repo["task"].as<const char*>();
-			new_task->set_task_type(str2type_task(task_type_val));
-			//check_params(repo, new_task);
-			queue.push(new_task);
+			int id = repo["id"].as<int>();
+			if (id < 0 || id > max_task_id) {
+				max_task_id = (id > max_task_id? id : max_task_id);
+	
+				Task *new_task = new Task{id, outputMode::SD_CARD, repo["duration"] | 10, task_type::SLEEP};
+				std::string task_type_val = repo["task"].as<const char*>();
+				new_task->set_task_type(str2type_task(task_type_val));
+				new_task->parseJson_parameters(repo);
+				
+				ESP_LOGI(TAG, "Add task id=%d to queue", id);
+				queue.push(new_task);
+				k++;
+			}
+			else {			
+				ESP_LOGI(TAG, "No need to add Task id=%d, was added earlier", id);
+			}
 		}
 	}
-	return 0;
+	return k;
 }
 
-static void get_task_sim808(std::queue<Task *> &queue) {
+static int get_task_sim808(std::queue<Task *> &queue) {
 	char *buffer = (char*)malloc(SIM808_BUFSIZE);
 	ESP_LOGI(TAG, "get_task_sim808");
 	for (int i = 0; i < ATs_GET_task.size(); i++) {
@@ -56,8 +72,9 @@ static void get_task_sim808(std::queue<Task *> &queue) {
 		get_response(buffer);
 	}
 
-	parseJson(strchr(buffer, '['), queue);
+	int count_added = parseJson(strchr(buffer, '['), queue);
 	free(buffer);
+	return count_added;
 }
 
 
@@ -73,8 +90,12 @@ void do_sim808_action(sim808_command action, std::queue<Task *> &pqueue) {
 		case sim808_command::DEINIT_GPRS :
 			ptr_vec = &ATs_deinit_GPRS;
 			break;
-		case sim808_command::GET_TASK_URL :
-			return get_task_sim808(pqueue);
+		case sim808_command::GET_TASK_URL : {
+			int count_added = get_task_sim808(pqueue);
+			std::string oled_buffer = "Added " + std::to_string(count_added) + " tasks";
+			ssd1306_display_text(&dev, 4, oled_buffer.c_str(), oled_buffer.size(), false);
+			return;
+		}
 		case sim808_command::SLEEP_MODE :
 			ptr_vec = &ATs_sleep;
 			break;

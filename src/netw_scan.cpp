@@ -17,35 +17,35 @@
 
 static const char *TAG = "scan";
 
-static void print_auth_mode(int authmode)
+static void print_auth_mode(FILE *F, int authmode)
 {
     switch (authmode) {
     case WIFI_AUTH_OPEN:
-        ESP_LOGI(TAG, "Authmode \tWIFI_AUTH_OPEN");
+        fprintf(F, "Authm = WIFI_AUTH_OPEN\n");
         break;
     case WIFI_AUTH_WEP:
-        ESP_LOGI(TAG, "Authmode \tWIFI_AUTH_WEP");
+        fprintf(F, "Authm = WIFI_AUTH_WEP\n");
         break;
     case WIFI_AUTH_WPA_PSK:
-        ESP_LOGI(TAG, "Authmode \tWIFI_AUTH_WPA_PSK");
+        fprintf(F, "Authm = WIFI_AUTH_WPA_PSK\n");
         break;
     case WIFI_AUTH_WPA2_PSK:
-        ESP_LOGI(TAG, "Authmode \tWIFI_AUTH_WPA2_PSK");
+        fprintf(F, "Authm = WIFI_AUTH_WPA2_PSK\n");
         break;
     case WIFI_AUTH_WPA_WPA2_PSK:
-        ESP_LOGI(TAG, "Authmode \tWIFI_AUTH_WPA_WPA2_PSK");
+        fprintf(F, "Authm = WIFI_AUTH_WPA_WPA2_PSK\n");
         break;
     case WIFI_AUTH_WPA2_ENTERPRISE:
-        ESP_LOGI(TAG, "Authmode \tWIFI_AUTH_WPA2_ENTERPRISE");
+        fprintf(F, "Authm = WIFI_AUTH_WPA2_ENTERPRISE\n");
         break;
     case WIFI_AUTH_WPA3_PSK:
-        ESP_LOGI(TAG, "Authmode \tWIFI_AUTH_WPA3_PSK");
+        fprintf(F, "Authm = WIFI_AUTH_WPA3_PSK\n");
         break;
     case WIFI_AUTH_WPA2_WPA3_PSK:
-        ESP_LOGI(TAG, "Authmode \tWIFI_AUTH_WPA2_WPA3_PSK");
+        fprintf(F, "Authm = WIFI_AUTH_WPA2_WPA3_PSK\n");
         break;
     default:
-        ESP_LOGI(TAG, "Authmode \tWIFI_AUTH_UNKNOWN");
+        fprintf(F, "Authm = WIFI_AUTH_UNKNOWN\n");
         break;
     }
 }
@@ -119,7 +119,10 @@ void wifi_netw_scan_with_config(wifi_scan_config_t *scan_cfg, const std::string 
     uint16_t number = DEFAULT_SCAN_LIST_SIZE * 4;
     wifi_ap_record_t *ap_info = (wifi_ap_record_t *)malloc( number * sizeof(wifi_ap_record_t) );
     uint16_t ap_count = 0;
-    
+    scan_cfg->scan_time.active.min = 1000;
+    scan_cfg->scan_time.active.max = 5000;
+    scan_cfg->scan_type = WIFI_SCAN_TYPE_ACTIVE;
+
     std::string full_path = SNIFFER_MOUNT_POINT + filename + ".txt";
     ESP_LOGI(TAG, "Filename = %s", full_path.c_str());
     FILE *result = fopen(full_path.c_str(), "w+");
@@ -134,19 +137,23 @@ void wifi_netw_scan_with_config(wifi_scan_config_t *scan_cfg, const std::string 
     ESP_ERROR_CHECK(esp_wifi_scan_get_ap_num(&ap_count));
     ESP_LOGI(TAG, "Total APs scanned = %u", ap_count);
 
+    if (scan_cfg)
+        fprintf(result, "Channel %u\n", scan_cfg->channel);
+    
     fprintf(result, "Total APs scanned = %u\n", ap_count);
     for (int i = 0; (i < number) && (i < ap_count); i++) {
-        ESP_LOGI(TAG, "SSID \t\t%s", ap_info[i].ssid);
-        ESP_LOGI(TAG, "RSSI \t\t%d", ap_info[i].rssi);
-        print_auth_mode(ap_info[i].authmode);
-        if (ap_info[i].authmode != WIFI_AUTH_WEP) {
-            print_cipher_type(ap_info[i].pairwise_cipher, ap_info[i].group_cipher);
-        }
-        ESP_LOGI(TAG, "Channel \t\t%d\n", ap_info[i].primary);
+        //ESP_LOGI(TAG, "SSID \t\t%s", ap_info[i].ssid);
+        //ESP_LOGI(TAG, "RSSI \t\t%d", ap_info[i].rssi);
+        //print_auth_mode(stdout, ap_info[i].authmode);
+        //if (ap_info[i].authmode != WIFI_AUTH_WEP) {
+            //print_cipher_type(ap_info[i].pairwise_cipher, ap_info[i].group_cipher);
+        //}
+        //ESP_LOGI(TAG, "Channel \t\t%d\n", ap_info[i].primary);
         
         fprintf(result, "-----------------------------------------------\n");
         fprintf(result, "SSID  = %s\n", ap_info[i].ssid);
         fprintf(result, "BSSID = %s\n", bssid2str(ap_info[i].bssid).c_str());
+        print_auth_mode(result, ap_info[i].authmode);
         fprintf(result, "RSSI  = %d\n", ap_info[i].rssi);
         fprintf(result, "Chan  = %d\n", ap_info[i].primary);
     }    

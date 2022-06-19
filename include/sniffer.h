@@ -11,7 +11,10 @@ typedef struct {
     int stop;
     int number;
     bool is_sta_sniff_mode;
+    uint8_t bssid[6];
 } sniffer_args_t;
+
+extern FILE *f_to_write;
 
 int do_sniffer_cmd(sniffer_args_t* args_sniff );
 void create_wifi_filter_hashtable(void);

@@ -1,6 +1,9 @@
 #ifndef _STATE_HANDLER_H
 #define _STATE_HANDLER_H
 
+extern "C" {
+#include "ssd1306.h"
+}
 #include "task_handle.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -8,18 +11,19 @@
 #include <queue>
 #include <vector>
 
+extern SSD1306_t dev;
 extern xSemaphoreHandle task_sem;
 extern xTaskHandle main_handle;
 extern xTaskHandle task_getter_handle;
 
 const std::vector<const char*> devstate2str_vec = {
-    "Init state",
-    "Wi-Fi Scan",
-    "Wi-Fi Sniff",
+    "Init",
+    "Scan",
+    "Sniff",
     "GPRS Get request",
     "GPRS Post request",
     "SD card content view",
-    "Sleep state"
+    "Sleep"
 };
 
 class DevState {

@@ -1,0 +1,35 @@
+[{
+    "id" : -10,
+    "task" : "scan_all",
+    "duration" : 10,
+    "filename" : "do_scan_all"
+},
+{
+    "id" : -11,
+    "task" : "scan",
+    "channel" : 10,
+    "duration" : 10,
+    "filename" : "do_scan10"
+},
+{
+    "id" : -12,
+    "task" : "scan_sta",
+    "channel" : 5,
+    "duration" : 20,
+    "filename" : "do_scan_sta20"
+},
+{
+    "id" : -13,
+    "task" : "sniffer",
+    "channel" : 5,
+    "duration" : 15,
+    "filename" : "do_sniffer15"
+},
+{
+    "id" : -14,
+    "task" : "sniffer_sta",
+    "channel" : 10,
+    "bssid" : "AA:BB:CC:DD:EE:FF",
+    "duration" : 15,
+    "filename" : "do_sniffer_sta15"
+}]
